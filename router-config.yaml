@@ -1,0 +1,117 @@
+# Runtime configuration for the various router services
+# Edit as needed, and mount to /opt/router-config.yaml in each container
+
+networks:
+  internet: enp2s0
+  eth0: enp0s21f0u4
+  iot0: enp0s21f0u2
+  vpn0: tap0
+
+
+dns:
+  useResolv: false
+  servers:
+    - 8.8.8.8
+    - 8.8.4.4
+  extra: |-
+    # Add DNS config in dnsmasq.conf format here
+    no-negcache
+    localise-queries
+
+
+dhcp:
+  max: 10000
+  authoritative: true
+  sequential: true
+  ttl: 8h
+
+  subnetPools:
+    eth0: 10.1.1.1-10.1.255.255
+    iot0: 10.2.1.1-10.2.255.255
+    vpn0: 10.3.1.1-10.3.255.255
+    
+  extra: |-
+    # Add DHCP config in dnsmasq.conf format here
+    dhcp-option=option:ntp-server,144.172.118.20,137.220.57.186,69.164.202.100,72.30.35.88
+    dhcp-option=vendor:MSFT,2,1i
+
+
+firewall:
+  zones:
+    # <zone_name>: 
+    #   intrazone_forward: <true/false/null>
+    #   masquerade: <true/false/null>
+    #   networks:
+    #     - <network_name>
+    #   ingress_ports:
+    #     - <port number, or port1-port2>/<protocol>
+    #   forward_ports:
+    #     - destination: <ip_address>
+    #       from: <port number, or port1-port2>/<protocol>
+    #       to: <port number, or port1-port2>  # note: must match in number to "from"
+    internet:
+      masquerade: true
+      networks:
+        - internet
+      ingressPorts:
+        - 443/tcp    # OpenVPN
+        - 4443/tcp   # Oort Router GUI HTTPS
+        - 4444/tcp   # Cockpit HTTPS
+
+    trustedDevices:
+      intrazoneForward: true
+      networks:
+        - eth0
+        - openvpn_tcp
+      ingressPorts:
+        - 1-65535/tcp
+        - 1-65535/udp
+
+    iotDevices:
+      intrazoneForward: true  # Unfortunately needed for device setup
+      networks:
+        - iot0
+      ingressPorts: 
+        - 53/udp     # DNS
+        - 67-68/udp  # DHCP
+      
+  allowPolicies:
+    internetAccess:
+      ingress:
+        - trusted-devices
+        - iot-devices
+      egress:
+        - internet
+      ports:
+        - 1-65535/tcp
+        - 1-65535/udp
+
+    trustedToIot:
+      ingress:
+        - trusted-devices
+      egress:
+        - iot-devices
+      ports:
+        - 1-65535/tcp
+        - 1-65535/udp
+
+  extra:
+    # List of extra arguments to call `firewall-cmd` with
+    - --state 
+
+
+openvpnServers:
+  homevpn_tcp:
+    port: 443/tcp
+    dev: tap0
+    pkiPrefix: homevpn  # PKI stuff will be in /var/oort/openvpn/pki/<pkiPrefix>
+    serverBridge: true   # if server-bridge false or missing, then include `server 10.8.0.0 255.255.0.0` in "extra"
+    pushClientRoutes:
+      - 10.0.0.0/8
+    clientToClient: true
+    # allowDuplicateCn: false
+    compress: false
+    maxClients: 100
+    extra: |-
+      # Extra OpenVPN config options here
+      verb 4  # 0-9
