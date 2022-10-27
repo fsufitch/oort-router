@@ -1,0 +1,9 @@
+# Runtime configuration for the dnsmasq container
+# Mount to /opt/dnsmasq/config.yaml
+
+subnets:
+  main-lan:
+    interface: enp0s21f0u4
+    dhcp-range: 10.1.1.1-10.1.255.255
+
+  -
