@@ -7,9 +7,33 @@ license = "GPLv3"
 readme = "README.md"
 packages = [{include = "oort_tools"}]
 
+[tool.poetry.scripts]
+oort_send_email = 'oort_tools.email.send:main'
+
 [tool.poetry.dependencies]
 python = "^3.9"
+boto3 = "^1.26.17"
+chardet = "^5.0.0"
+python-magic = "^0.4.27"
 
+[tool.poetry.group.dev.dependencies]
+black = "^22.10.0"
+pylint = "^2.15.6"
+boto3-stubs = {extras = ["route53", "ses", "sesv2", "sts"], version = "^1.26.17"}
+isort = "^5.10.1"
+pytest = "^7.2.0"
+
+[tool.isort]
+profile = "black"
+
+[tool.pylint.format]
+max-line-length = "240"
+
+[tool.pylint.messages_control]
+disable = ["C0114", "C0115", "C0116"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
 
 [build-system]
 requires = ["poetry-core"]
