@@ -19,10 +19,11 @@ ENCODING = "utf-8"
 
 def _build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Send an email using AWS SES")
-    parser.add_argument("subject", help="subject of the email")
     parser.add_argument(
         "recipient", metavar="EMAIL", nargs="+", help="recipients of the email"
     )
+    parser.add_argument("subject", help="subject of the email")
+
     parser.add_argument(
         "-f",
         "--from",
