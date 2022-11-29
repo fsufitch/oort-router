@@ -4,8 +4,17 @@ import base64
 import codecs
 import email.headerregistry
 import email.message
+import email.base64mime
+import email.encoders
+from functools import lru_cache
 import io
+import email.mime
+import email.mime.nonmultipart
+import email.mime.multipart
+import email.mime.text
+import email.utils
 import pathlib
+import email.mime.base
 import sys
 from dataclasses import dataclass
 from typing import BinaryIO, Iterable, List, Literal, Optional, Sequence, Tuple
@@ -13,63 +22,40 @@ from typing import BinaryIO, Iterable, List, Literal, Optional, Sequence, Tuple
 import magic
 from chardet.universaldetector import UniversalDetector
 
+SES_IDENTITY_HEADER = 'X-Oort-SES-Identity'
 
 @dataclass(frozen=True)
 class StandardEmail:
     subject: str
     sender: str
+    ses_identity: str
     recipients: Sequence[str]
-    text_body_chunks: Sequence[BodyChunk]
-    html_body_chunks: Sequence[BodyChunk]
+    text_chunk: Optional[BodyChunk]
+    html_chunk: Optional[BodyChunk]
     attachments: Sequence[BodyChunk]
 
-    def build_email_message(self) -> email.message.Message:
+    @property
+    def email_message(self) -> email.message.Message:
         message = email.message.EmailMessage()
         message["Subject"] = self.subject
-
         message["From"] = self.sender
-        message["To"] = self.recipients
+        message["To"] = ', '.join(self.recipients)
+        message[SES_IDENTITY_HEADER] = self.ses_identity
+        message.make_alternative()
 
-        message.make_mixed()
+        if self.text_chunk:
+            message.attach(self.text_chunk.build_text_part())
 
-        message.set_payload(
-            [
-                self._build_body(),
-                *(a.build_attachment_part() for a in self.attachments),
-            ]
-        )
+        if self.html_chunk:
+            message.attach(self.html_chunk.build_html_part())
+
+        for chunk in self.attachments:
+            # byts = b''.join(chunk.bytes_iter)
+            message.attach(chunk.build_attachment_part())
+
+        print(message.as_string())
 
         return message
-
-    def _build_body(self) -> email.message.Message:
-        parts: List[email.message.Message] = []
-
-        if len(self.text_body_chunks) == 1:
-            parts.append(self.text_body_chunks[0].build_text_part())
-        elif len(self.text_body_chunks) > 1:
-            part = email.message.EmailMessage()
-            part.make_mixed()
-            part.set_payload([chunk.build_text_part() for chunk in self.text_body_chunks])
-            parts.append(part)
-
-        if len(self.html_body_chunks) == 1:
-            parts.append(self.text_body_chunks[0].build_text_part())
-        elif len(self.html_body_chunks) > 1:
-            part = email.message.EmailMessage()
-            part.make_mixed()
-            part.set_payload([chunk.build_html_part() for chunk in self.text_body_chunks])
-            parts.append(part)
-
-        if not parts:
-            raise ValueError("No text or HTML parts built")
-
-        if len(parts) == 1:
-            return parts[0]
-
-        body = email.message.EmailMessage()
-        body.make_alternative()
-        body.set_payload(parts)
-        return body
 
 
 def _read(
@@ -112,33 +98,26 @@ class BodyChunk:
     is_stdin: bool = False
 
     def build_text_part(self) -> email.message.Message:
-        message = email.message.Message()
-        message.set_type("text/plain")
-        if self.charset:
-            message.set_charset(self.charset)
+        message = email.message.EmailMessage()
         body = b"".join(self.bytes_iter)
-        message.set_payload(body)
+        message.set_content(body, 'text', 'plain')
         return message
 
     def build_html_part(self) -> email.message.Message:
-        message = email.message.Message()
-        message.set_type("text/html")
-        if self.charset:
-            message.set_charset(self.charset)
+        message = email.message.EmailMessage()
         body = b"".join(self.bytes_iter)
-        message.set_payload(body)
+        message.set_content(body, 'text', 'html')
         return message
 
     def build_attachment_part(self) -> email.message.Message:
-        print(self)
-        message = email.message.Message()
+        maintype, subtype = self.mimetype.split('/', 1)
+        message = email.mime.base.MIMEBase(maintype, subtype)
         message.add_header("Content-Disposition", "attachment", filename=self.filename)
-        message.add_header('Content-Transfer-Encoding', 'base64')        
         message.set_type(self.mimetype)
         if self.charset:
             message.set_charset(self.charset)
-
-        message.set_payload(base64.encodebytes(b''.join(self.bytes_iter)))
+        message.set_payload(b''.join(self.bytes_iter))
+        email.encoders.encode_base64(message)
         return message
 
     @staticmethod
